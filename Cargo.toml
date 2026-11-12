@@ -1,0 +1,5 @@
+[workspace]
+resolver = "2"
+# Members listed here are the ones that currently exist; add the consumer, gui
+# and the other crates as they get implemented.
+members = ["producer", "crates/registry"]

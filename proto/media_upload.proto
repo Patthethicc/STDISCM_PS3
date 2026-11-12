@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package media;
+
+// Client-streaming upload: the producer sends one Header, then Chunk messages.
+service MediaUpload {
+  rpc Upload(stream UploadRequest) returns (UploadResponse);
+}
+
+message UploadRequest {
+  oneof payload {
+    Header header = 1; // must be the first message
+    bytes chunk = 2;   // raw video bytes
+  }
+}
+
+message Header {
+  string filename = 1;
+  uint64 size_bytes = 2;
+  string sha256 = 3; // hex-encoded SHA-256 of the whole file
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  ACCEPTED = 1;   // queued (not necessarily saved yet)
+  QUEUE_FULL = 2;
+  DUPLICATE = 3;
+  ERROR = 4;
+}
+
+message UploadResponse {
+  Status status = 1;
+  string message = 2;
+}
