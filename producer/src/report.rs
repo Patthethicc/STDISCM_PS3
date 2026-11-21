@@ -3,10 +3,10 @@
 use crate::proto::Status;
 use crate::uploader::Outcome;
 
-/// Log label for a consumer status. ACCEPTED means queued, not saved.
+/// Log label for a consumer status
 pub fn status_label(status: Status) -> &'static str {
     match status {
-        Status::Accepted => "ACCEPTED (queued, not yet saved)",
+        Status::Accepted => "ACCEPTED",
         Status::QueueFull => "QUEUE_FULL",
         Status::Duplicate => "DUPLICATE",
         Status::Error => "ERROR",
