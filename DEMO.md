@@ -40,15 +40,15 @@ Producer VM:
 
 ## 3. Queue full: leaky bucket + Bonus 1 (1.5 min)
 
-Restart the consumer with a tiny queue and slow workers:
+Restart the consumer with a tiny queue:
 ```bash
-C=1 Q=2 WORKER_DELAY_MS=3000 ./deploy/run-consumer.sh
+C=1 Q=1 ./deploy/run-consumer.sh
 ```
 Producer VM:
 ```bash
 ./tests/e2e/e2e.sh queue-full
 ```
-- Producer log: several `QUEUE_FULL` lines; only a few ACCEPTED.
+- 8 producers upload at once. Producer log: several `QUEUE_FULL` lines; the rest ACCEPTED.
 
 > "Bonus 1: the consumer tells the producer the queue is full. It reserves the queue slot when the
 > header arrives, so a dropped video never wastes bandwidth uploading its bytes."

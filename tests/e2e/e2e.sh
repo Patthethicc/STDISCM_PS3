@@ -8,8 +8,8 @@
 #
 #   multi          p=3 with 3 folders: every video ends up in the folder and the GUI
 #                  consumer: normal, e.g. C=2 Q=10
-#   queue-full     small queue + slow workers: extra videos dropped, producers log QUEUE_FULL
-#                  consumer: C=1 Q=2 WORKER_DELAY_MS=3000
+#   queue-full     8 producers vs a 1-slot queue: extra videos dropped, producers log QUEUE_FULL
+#                  consumer: C=1 Q=1
 #   retry          re-upload the videos dropped by queue-full: accepted, NOT flagged duplicate
 #                  consumer: same as queue-full (run right after it)
 #   duplicate      same video in two folders, uploaded at once: one saved, the other DUPLICATE
@@ -23,7 +23,8 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-[[ -f deploy/.env ]] && set -a && source deploy/.env && set +a
+# Load deploy/.env; variables already set on the command line (e.g. Q=2 ./...) win.
+if [[ -f deploy/.env ]]; then _env=$(export -p); set -a; source deploy/.env; set +a; eval "$_env" 2>/dev/null || true; fi
 : "${CONSUMER_HOST:?set CONSUMER_HOST in deploy/.env}"
 API="http://${CONSUMER_HOST}:${GUI_PORT:-8080}/api/videos"
 WORK="tests/e2e/.work"
@@ -94,12 +95,15 @@ multi() {
 }
 
 queue_full() {
-  echo "-- small queue with slow workers (consumer: C=1 Q=2 WORKER_DELAY_MS=3000)"
-  local d="$WORK/qfull-$RUN_ID"
-  for f in 1 2 3; do for v in 1 2 3 4; do make_video "$d/p$f/qfull_${f}_${v}.mp4" 6 $((900 + f*100 + v*10)); done; done
-  producer "$d/p1" "$d/p2" "$d/p3"
+  echo "-- 8 producers at once vs a tiny queue (consumer: C=1 Q=1)"
+  local d="$WORK/qfull-$RUN_ID" dirs=() f v
+  for f in 1 2 3 4 5 6 7 8; do
+    for v in 1 2; do make_video "$d/p$f/qfull_${f}_${v}.mp4" 20 $((900 + f*100 + v*10)); done
+    dirs+=("$d/p$f")
+  done
+  producer "${dirs[@]}"
   local full; full=$(n_label QUEUE_FULL)
-  check "some uploads dropped with QUEUE_FULL ($full of 12)" [ "$full" -ge 1 ]
+  check "some uploads dropped with QUEUE_FULL ($full of 16)" [ "$full" -ge 1 ]
   check "some uploads still ACCEPTED" [ "$(n_label ACCEPTED)" -ge 1 ]
   check "nothing flagged DUPLICATE" [ "$(n_label DUPLICATE)" -eq 0 ]
   # remember dropped files for the retry scenario

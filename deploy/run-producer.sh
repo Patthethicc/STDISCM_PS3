@@ -4,7 +4,8 @@
 #   ./deploy/run-producer.sh videos/a videos/b                # P = number of folders given
 set -euo pipefail
 cd "$(dirname "$0")/.."
-[[ -f deploy/.env ]] && set -a && source deploy/.env && set +a
+# Load deploy/.env; variables already set on the command line (e.g. Q=2 ./...) win.
+if [[ -f deploy/.env ]]; then _env=$(export -p); set -a; source deploy/.env; set +a; eval "$_env" 2>/dev/null || true; fi
 : "${CONSUMER_HOST:?set CONSUMER_HOST in deploy/.env}"
 
 if [[ $# -gt 0 ]]; then

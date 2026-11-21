@@ -78,9 +78,8 @@ ACCEPTED means the video got a queue slot; it appears in the GUI once a worker h
 | `p` | producer (number of folders) | producer threads, each reading its own folder |
 | `c` | `C` in `.env` on the consumer | consumer worker threads |
 | `q` | `Q` in `.env` on the consumer | max queue length; uploads beyond it are dropped (leaky bucket) |
-| worker delay | `WORKER_DELAY_MS` on the consumer | slows workers so the queue fills, to demo drops |
 
-Override any of them for one run: `C=1 Q=2 WORKER_DELAY_MS=3000 ./deploy/run-consumer.sh`.
+Override any of them for one run: `C=1 Q=1 ./deploy/run-consumer.sh`.
 
 ## Output folder (consumer VM)
 
@@ -106,4 +105,4 @@ On the consumer VM: `./deploy/mock-data.sh` (generates 4 test videos into `data/
 | GUI page doesn't open from another machine | Firewall port 8080; `run-gui.sh` binds 0.0.0.0 already |
 | Build error about `protoc` | Install protobuf-compiler (step 2) |
 | Videos show "processing" or no preview | ffmpeg missing on the consumer VM |
-| No drops even with a small queue | Set `WORKER_DELAY_MS` (e.g. 3000) and use more videos than `Q` |
+| No drops even with a small queue | Use more producer folders than queue slots + workers (the test uses 8 folders with `C=1 Q=1`) |
