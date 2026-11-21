@@ -67,6 +67,9 @@ impl Storage {
         Ok(final_path)
     }
 
+    /// Where the transcoded video goes: `uploads/<id>.mp4` (written by the media crate).
+    pub fn video_abs(&self, id: &str) -> PathBuf { self.uploads_dir.join(format!("{id}.mp4")) }
+    pub fn transcoded_rel(id: &str) -> String { format!("uploads/{id}.mp4") }
     pub fn preview_abs(&self, id: &str) -> PathBuf { self.previews_dir.join(format!("{id}.mp4")) }
     pub fn thumbnail_abs(&self, id: &str) -> PathBuf { self.thumbnails_dir.join(format!("{id}.jpg")) }
     pub fn preview_rel(id: &str) -> String { format!("previews/{id}.mp4") }

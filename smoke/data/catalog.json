@@ -1,0 +1,26 @@
+[
+  {
+    "id": "fd5f0d429aaa5d84",
+    "filename": "dup.mp4",
+    "sha256": "fd5f0d429aaa5d84f8b7f9f45c009c6890b4dd513188bf8747ebe80b1f6ff217",
+    "duration_secs": 3.0,
+    "original_size": 133460,
+    "compressed_size": 141115,
+    "video_path": "uploads/fd5f0d429aaa5d84.mp4",
+    "preview_path": "previews/fd5f0d429aaa5d84.mp4",
+    "thumbnail_path": "thumbnails/fd5f0d429aaa5d84.jpg",
+    "added_at_ms": 1795247644783
+  },
+  {
+    "id": "3206470b9af71949",
+    "filename": "long.mp4",
+    "sha256": "3206470b9af7194937e255005eb09d0ab6aedc417bc154a1af3ab4706d87f63e",
+    "duration_secs": 14.0,
+    "original_size": 1463594,
+    "compressed_size": 1396706,
+    "video_path": "uploads/3206470b9af71949.mp4",
+    "preview_path": "previews/3206470b9af71949.mp4",
+    "thumbnail_path": "thumbnails/3206470b9af71949.jpg",
+    "added_at_ms": 1795247645110
+  }
+]

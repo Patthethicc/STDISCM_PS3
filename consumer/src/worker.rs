@@ -4,10 +4,16 @@ use crate::storage::Storage;
 use catalog::{Catalog, VideoEntry};
 use sha2::{Digest, Sha256};
 use std::io::Write; // <-- Use standard sync Write for the temp file
-use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_util::sync::CancellationToken;
+
+/// One read-only media config shared by every worker (no locking needed).
+static MEDIA_CFG: OnceLock<media::MediaConfig> = OnceLock::new();
+
+fn media_cfg() -> &'static media::MediaConfig {
+    MEDIA_CFG.get_or_init(media::MediaConfig::default)
+}
 
 pub async fn worker_loop(
     mut rx: JobReceiver,
@@ -87,29 +93,49 @@ async fn process_job_inner(
         format!("flush: {e}")
     })?;
 
-    let duration_secs = match ffprobe_duration(staging.path()).await {
-        Ok(d) => d,
-        Err(e) => { storage.release(&sha256); return Err(format!("ffprobe: {e}")); }
-    };
-
-    let uploaded_path = match storage.persist(staging, &sha256, &filename) {
-        Ok(p) => p,
-        Err(e) => { storage.release(&sha256); return Err(e); }
-    };
+    // Media processing (probe, preview, thumbnail, transcode) runs on the staging
+    // file, so the transcode can be written to uploads/<id>.mp4 without clashing
+    // with the original. process_video blocks (it waits on ffmpeg), so it goes to
+    // the blocking pool; at most one runs per worker.
     let id = Storage::id_from_sha(&sha256);
+    let out = media::OutputPaths {
+        preview: storage.preview_abs(&id),
+        thumbnail: storage.thumbnail_abs(&id),
+        compressed: storage.video_abs(&id),
+    };
+    let input = staging.path().to_path_buf();
+    let processed = tokio::task::spawn_blocking(move || media::process_video(media_cfg(), &input, &out)).await;
+    let m = match processed {
+        Ok(Ok(m)) => m,
+        Ok(Err(e)) => {
+            // process_video already removed any partial outputs; dropping `staging` deletes the upload.
+            storage.release(&sha256);
+            let kind = if e.is_bad_input() { "rejected" } else { "media error" };
+            return Err(format!("{kind}: {e}"));
+        }
+        Err(e) => { storage.release(&sha256); return Err(format!("media task failed: {e}")); }
+    };
+    for w in &m.warnings {
+        tracing::warn!(%id, "{w}");
+    }
 
-    let preview_abs = storage.preview_abs(&id);
-    let preview_path = match generate_preview(&uploaded_path, &preview_abs).await {
-        Ok(()) => Some(Storage::preview_rel(&id)),
-        Err(e) => { tracing::warn!(%id, error = %e, "preview failed");
-                    let _ = tokio::fs::remove_file(&preview_abs).await; None }
+    // Transcode succeeded: it replaces the original at uploads/<id>.mp4.
+    // Otherwise keep the original upload as the playable file.
+    let video_path = if m.compression.is_some() {
+        drop(staging);
+        Storage::transcoded_rel(&id)
+    } else {
+        if let Err(e) = storage.persist(staging, &sha256, &filename) {
+            let _ = std::fs::remove_file(&m.preview);
+            if let Some(t) = &m.thumbnail { let _ = std::fs::remove_file(t); }
+            storage.release(&sha256);
+            return Err(e);
+        }
+        Storage::video_rel(&id, &filename)
     };
-    let thumb_abs = storage.thumbnail_abs(&id);
-    let thumbnail_path = match generate_thumbnail(&uploaded_path, &thumb_abs).await {
-        Ok(()) => Some(Storage::thumbnail_rel(&id)),
-        Err(e) => { tracing::warn!(%id, error = %e, "thumbnail failed");
-                    let _ = tokio::fs::remove_file(&thumb_abs).await; None }
-    };
+    let preview_path = Some(Storage::preview_rel(&id));
+    let thumbnail_path = m.thumbnail.as_ref().map(|_| Storage::thumbnail_rel(&id));
+    let duration_secs = m.duration_secs.or(m.info.duration_secs).unwrap_or(0.0);
 
     let added_at_ms = SystemTime::now().duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?.as_millis() as u64;
@@ -120,8 +146,8 @@ async fn process_job_inner(
         sha256: sha256.to_ascii_lowercase(),
         duration_secs,
         original_size: expected_size,
-        compressed_size: None,
-        video_path: Storage::video_rel(&id, &filename),
+        compressed_size: m.compression.as_ref().map(|c| c.compressed_bytes),
+        video_path,
         preview_path,
         thumbnail_path,
         added_at_ms,
@@ -135,56 +161,6 @@ async fn process_job_inner(
     Ok(id)
 }
 
-// ── ffmpeg / ffprobe helpers ─────────────────────────────────────────
-
-async fn ffprobe_duration(path: &Path) -> Result<f64, String> {
-    let out = tokio::process::Command::new("ffprobe")
-        .args(["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1"])
-        .arg(path)
-        .output()
-        .await
-        .map_err(|e| format!("ffprobe spawn: {e}"))?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).into_owned());
-    }
-    let s = String::from_utf8_lossy(&out.stdout);
-    s.trim().parse::<f64>().map_err(|e| format!("duration parse: {e}"))
-}
-
-async fn generate_preview(input: &Path, output: &Path) -> Result<(), String> {
-    let status = tokio::process::Command::new("ffmpeg")
-        .args(["-y", "-loglevel", "error", "-i"])
-        .arg(input)
-        .args(["-t", "10", "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-movflags", "+faststart"])
-        .arg(output)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map_err(|e| format!("ffmpeg preview spawn: {e}"))?;
-    if !status.success() {
-        return Err("ffmpeg preview failed".into());
-    }
-    Ok(())
-}
-
-async fn generate_thumbnail(input: &Path, output: &Path) -> Result<(), String> {
-    let status = tokio::process::Command::new("ffmpeg")
-        .args(["-y", "-loglevel", "error", "-i"])
-        .arg(input)
-        .args(["-ss", "1", "-vframes", "1", "-q:v", "3"])
-        .arg(output)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map_err(|e| format!("ffmpeg thumb spawn: {e}"))?;
-    if !status.success() {
-        return Err("ffmpeg thumbnail failed".into());
-    }
-    Ok(())
-}
-
 pub fn spawn_workers(
     mut queue_rx: JobReceiver,
     storage: Arc<Storage>,
@@ -193,6 +169,11 @@ pub fn spawn_workers(
     c: usize,
     tracker: &tokio_util::task::TaskTracker,
 ) {
+    // ffmpeg is CPU-bound: share the cores between the c workers instead of letting
+    // every ffmpeg process grab all of them.
+    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let _ = MEDIA_CFG.set(media::MediaConfig { threads: (cores / c.max(1)).max(1) as u32, ..Default::default() });
+
     let mut txs = Vec::with_capacity(c);
     let mut rxs = Vec::with_capacity(c);
     for _ in 0..c {

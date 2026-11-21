@@ -92,5 +92,31 @@ async fn happy_path_produces_video_entry() {
     assert_eq!(e.id, &sha[..16]);
     assert!(e.duration_secs > 0.0);
     assert_eq!(e.original_size, bytes.len() as u64);
+    // The media crate's transcode replaces the original at uploads/<id>.mp4.
+    assert_eq!(e.video_path, format!("uploads/{}.mp4", &sha[..16]));
     assert!(tmp.path().join(&e.video_path).exists());
+    assert!(e.compressed_size.is_some());
+    assert!(tmp.path().join(e.preview_path.as_ref().unwrap()).exists());
+    assert!(tmp.path().join(e.thumbnail_path.as_ref().unwrap()).exists());
+}
+
+#[tokio::test]
+#[ignore = "requires ffmpeg and ffprobe on PATH"]
+async fn corrupt_upload_is_rejected_and_leaves_nothing_behind() {
+    let tmp = tempfile::tempdir().unwrap();
+    let storage = Arc::new(Storage::new(tmp.path()).unwrap());
+    let catalog = Arc::new(catalog::Catalog::open(tmp.path()).unwrap());
+
+    let bytes = b"definitely not a video".to_vec();
+    let sha = sha256_hex(&bytes);
+    assert!(storage.try_reserve(&sha));
+
+    let (job, _rx) = job_with_bytes("bad.mp4", bytes.clone(), sha.clone(), bytes.len() as u64);
+    let err = process_job(job, &storage, &catalog).await.unwrap_err();
+    assert!(err.starts_with("rejected:"), "{err}");
+    assert!(catalog.list().is_empty());
+    assert!(storage.try_reserve(&sha), "reservation was not released");
+    for dir in ["uploads", "previews", "thumbnails"] {
+        assert_eq!(std::fs::read_dir(tmp.path().join(dir)).unwrap().count(), 0, "{dir} not empty");
+    }
 }
