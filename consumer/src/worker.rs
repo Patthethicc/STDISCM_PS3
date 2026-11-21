@@ -27,8 +27,12 @@ pub async fn worker_loop(
             maybe = rx.recv() => match maybe { Some(j) => j, None => break },
             _ = token.cancelled() => break,
         };
+        let filename = job.filename.clone();
         let result = process_job(job, &storage, &catalog).await;
-        tracing::info!(worker_id, ok = result.is_ok(), "job finished");
+        match &result {
+            Ok(id) => tracing::info!(worker_id, %filename, %id, "job finished"),
+            Err(reason) => tracing::error!(worker_id, %filename, %reason, "job failed"),
+        }
     }
     tracing::debug!(worker_id, "worker exiting");
 }

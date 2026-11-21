@@ -68,8 +68,8 @@ Open `http://<consumer IP>:8080` in a browser.
 ./deploy/run-producer.sh videos/a videos/b      # or pass folders directly (p = number of folders)
 ```
 
-Each file logs one line: `ACCEPTED (queued, not yet saved)`, `QUEUE_FULL`, `DUPLICATE`, or `ERROR`.
-ACCEPTED means the video got a queue slot; it appears in the GUI once a worker has saved and processed it.
+Each file logs one line: `ACCEPTED <id>`, `QUEUE_FULL`, `DUPLICATE`, or `ERROR`.
+ACCEPTED means a worker has saved and processed the video: the consumer replies only once the job is done, so it appears in the GUI right around then.
 
 ## 5. Inputs
 

@@ -27,11 +27,11 @@ Producer VM:
 ```bash
 ./tests/e2e/e2e.sh multi
 ```
-- Producer log: 9 lines `ACCEPTED (queued, not yet saved)` from producer-1, -2, -3.
+- Producer log: 9 lines `ACCEPTED <id>` from producer-1, -2, -3.
 - GUI: the videos pop in on their own (no reload) as workers finish.
 - Consumer VM: `ls data/uploads` shows all of them in the one folder.
 
-> "ACCEPTED means the video got a queue slot. It shows in the GUI once a worker has saved it."
+> "ACCEPTED means a worker has saved and processed the video. The consumer only replies once the job is done, so it shows in the GUI right around then."
 
 ## 2. GUI (1 min)
 
