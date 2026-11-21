@@ -7,3 +7,4 @@ data/previews/*
 data/thumbnails/*
 data/tmp/*
 !data/**/.gitkeep
+tests/e2e/.work/
